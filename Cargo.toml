@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "shared/observability",
+    "services/ledger-service",
+    "services/pnl-consumer",
+    "services/pnl-grpc",
+]
+resolver = "2"

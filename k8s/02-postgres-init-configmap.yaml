@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: crypto-accounting
+data:
+  init.sql: |
+    CREATE DATABASE ledger_db;
+    CREATE DATABASE pnl_db;

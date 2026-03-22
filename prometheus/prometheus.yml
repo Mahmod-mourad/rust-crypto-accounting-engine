@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ledger-service
+    static_configs:
+      - targets: ["ledger-service:9091"]
+
+  - job_name: pnl-consumer
+    static_configs:
+      - targets: ["pnl-consumer:9091"]
+
+  - job_name: pnl-grpc
+    static_configs:
+      - targets: ["pnl-grpc:9091"]

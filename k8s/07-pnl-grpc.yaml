@@ -1,0 +1,62 @@
+# ── pnl-grpc Deployment + Service ────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pnl-grpc
+  namespace: crypto-accounting
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pnl-grpc
+  template:
+    metadata:
+      labels:
+        app: pnl-grpc
+    spec:
+      containers:
+        - name: pnl-grpc
+          image: pnl-grpc:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: pnl-db-url
+            - name: GRPC_ADDR
+              value: "0.0.0.0:50051"
+            - name: RUST_LOG
+              value: "info"
+          readinessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pnl-grpc
+  namespace: crypto-accounting
+spec:
+  selector:
+    app: pnl-grpc
+  ports:
+    - port: 50051
+      targetPort: 50051
+  type: ClusterIP

@@ -1,0 +1,70 @@
+# ── ledger-service Deployment + Service ──────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-service
+  namespace: crypto-accounting
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ledger-service
+  template:
+    metadata:
+      labels:
+        app: ledger-service
+    spec:
+      containers:
+        - name: ledger-service
+          image: ledger-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: ledger-db-url
+            - name: DATABASE_MAX_CONNECTIONS
+              value: "10"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: "3000"
+            - name: KAFKA_BROKERS
+              value: "kafka.crypto-accounting.svc.cluster.local:9092"
+            - name: KAFKA_TOPIC
+              value: "trades"
+            - name: RUST_LOG
+              value: "info"
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-service
+  namespace: crypto-accounting
+spec:
+  selector:
+    app: ledger-service
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP

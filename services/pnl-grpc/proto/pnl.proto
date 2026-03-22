@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package pnl;
+
+// PnlService exposes realized PnL and portfolio state so any service can
+// query them over gRPC without coupling to the pnl-consumer's database.
+service PnlService {
+  // Return realized PnL and open lots for a single asset.
+  rpc GetPnlSummary(GetPnlSummaryRequest) returns (GetPnlSummaryResponse);
+
+  // Return all assets that have portfolio state.
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+}
+
+// ─── GetPnlSummary ────────────────────────────────────────────────────────────
+
+message GetPnlSummaryRequest {
+  string asset = 1;
+}
+
+message GetPnlSummaryResponse {
+  string asset              = 1;
+  // Cumulative realized PnL across all sells; serialized as a decimal string
+  // to avoid floating-point loss (e.g. "1234.56").
+  string total_realized_pnl = 2;
+  string total_quantity     = 3;
+  repeated Lot open_lots    = 4;
+}
+
+message Lot {
+  string quantity      = 1;
+  string cost_per_unit = 2;
+}
+
+// ─── ListAssets ───────────────────────────────────────────────────────────────
+
+message ListAssetsRequest {}
+
+message ListAssetsResponse {
+  repeated string assets = 1;
+}

@@ -1,0 +1,88 @@
+{
+  "title": "Crypto Accounting Engine",
+  "uid": "crypto-accounting",
+  "schemaVersion": 39,
+  "tags": ["crypto", "accounting"],
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Trades Created (ledger-service)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (asset, side, status) (rate(ledger_trades_total[1m]))",
+          "legendFormat": "{{asset}} {{side}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Kafka Publish Rate (ledger-service)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (status) (rate(ledger_kafka_publish_total[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Events Processed (pnl-consumer)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (status) (rate(pnl_consumer_events_total[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "PnL Processing Latency (p99, pnl-consumer)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le, asset) (rate(pnl_consumer_processing_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{asset}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "gRPC Requests (pnl-grpc)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (method, status) (rate(pnl_grpc_requests_total[1m]))",
+          "legendFormat": "{{method}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Kafka Messages Consumed (pnl-consumer)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(pnl_consumer_kafka_messages_total)",
+          "legendFormat": "Total messages consumed"
+        }
+      ]
+    }
+  ]
+}

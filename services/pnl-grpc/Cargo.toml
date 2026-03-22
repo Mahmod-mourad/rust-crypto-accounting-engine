@@ -1,0 +1,49 @@
+[package]
+name    = "pnl-grpc"
+version = "0.1.0"
+edition = "2021"
+
+# ── Binaries ──────────────────────────────────────────────────────────────────
+
+[[bin]]
+name = "pnl-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "pnl-client"
+path = "src/bin/client.rs"
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+
+[dependencies]
+# gRPC
+tonic        = "0.12"
+prost        = "0.13"
+async-trait  = "0.1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database (reads from pnl-consumer's portfolio_state table)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "rust_decimal", "json"] }
+
+# Serialization
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Decimal precision
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+
+# Utilities
+anyhow  = "1"
+dotenvy = "0.15"
+observability      = { path = "../../shared/observability" }
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics            = "0.24"
+
+# ── Build dependencies ────────────────────────────────────────────────────────
+
+[build-dependencies]
+tonic-build        = "0.12"
+protoc-bin-vendored = "3"

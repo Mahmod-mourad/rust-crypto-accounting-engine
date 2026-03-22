@@ -1,0 +1,46 @@
+# ── pnl-consumer Deployment ───────────────────────────────────────────────────
+# No HTTP port — pure Kafka consumer. Scale replicas to add partitions.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pnl-consumer
+  namespace: crypto-accounting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pnl-consumer
+  template:
+    metadata:
+      labels:
+        app: pnl-consumer
+    spec:
+      containers:
+        - name: pnl-consumer
+          image: pnl-consumer:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: pnl-db-url
+            - name: DATABASE_MAX_CONNECTIONS
+              value: "10"
+            - name: KAFKA_BROKERS
+              value: "kafka.crypto-accounting.svc.cluster.local:9092"
+            - name: KAFKA_TOPIC
+              value: "trades"
+            - name: KAFKA_GROUP_ID
+              value: "pnl-consumer"
+            - name: KAFKA_OFFSET_RESET
+              value: "earliest"
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

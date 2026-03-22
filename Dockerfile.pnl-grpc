@@ -1,0 +1,77 @@
+# ─── Stage 1: Builder ────────────────────────────────────────────────────────
+FROM rust:latest AS builder
+
+# protoc is required by tonic-build to compile .proto files at build time.
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy workspace manifests for layer caching.
+COPY Cargo.toml Cargo.lock ./
+COPY shared/observability/Cargo.toml    ./shared/observability/
+COPY services/ledger-service/Cargo.toml ./services/ledger-service/
+COPY services/pnl-consumer/Cargo.toml   ./services/pnl-consumer/
+COPY services/pnl-grpc/Cargo.toml       ./services/pnl-grpc/
+COPY services/pnl-grpc/build.rs         ./services/pnl-grpc/
+COPY services/pnl-grpc/proto            ./services/pnl-grpc/proto
+
+# Dummy sources so Cargo can resolve and compile all workspace dependencies.
+RUN mkdir -p shared/observability/src \
+             services/ledger-service/src \
+             services/ledger-service/benches \
+             services/pnl-consumer/src \
+             services/pnl-grpc/src/bin && \
+    echo ""             > shared/observability/src/lib.rs             && \
+    echo ""             > services/ledger-service/src/lib.rs          && \
+    echo "fn main() {}" > services/ledger-service/src/main.rs         && \
+    echo "fn main() {}" > services/ledger-service/benches/portfolio.rs && \
+    echo "fn main() {}" > services/pnl-consumer/src/main.rs           && \
+    echo ""             > services/pnl-grpc/src/lib.rs                 && \
+    echo "fn main() {}" > services/pnl-grpc/src/main.rs               && \
+    echo "fn main() {}" > services/pnl-grpc/src/bin/client.rs
+
+RUN cargo build --release --package pnl-grpc && \
+    rm -rf services/pnl-grpc/src services/ledger-service/src services/pnl-consumer/src
+
+# Copy real source.
+COPY shared/observability/src  ./shared/observability/src
+COPY services/pnl-grpc/src    ./services/pnl-grpc/src
+
+# Recreate dummy sources for other workspace members (deleted above)
+RUN mkdir -p services/ledger-service/src \
+             services/ledger-service/benches \
+             services/pnl-consumer/src && \
+    echo ""             > services/ledger-service/src/lib.rs          && \
+    echo "fn main() {}" > services/ledger-service/src/main.rs         && \
+    echo "fn main() {}" > services/ledger-service/benches/portfolio.rs && \
+    echo "fn main() {}" > services/pnl-consumer/src/main.rs
+
+RUN find shared/observability/src services/pnl-grpc/src -name "*.rs" | xargs touch && \
+    cargo build --release --package pnl-grpc --bin pnl-server
+
+# ─── Stage 2: Runtime ────────────────────────────────────────────────────────
+FROM debian:trixie-slim AS runtime
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 1001 pnlgrpc && \
+    useradd --uid 1001 --gid pnlgrpc --no-create-home pnlgrpc
+
+WORKDIR /app
+
+COPY --from=builder /app/target/release/pnl-server ./pnl-server
+
+RUN chown -R pnlgrpc:pnlgrpc /app
+
+USER pnlgrpc
+
+EXPOSE 50051
+
+ENTRYPOINT ["./pnl-server"]

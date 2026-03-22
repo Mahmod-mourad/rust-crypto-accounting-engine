@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/elahlwany/Desktop/Apps/Rust/rust-crypto-accounting-engine -type d -not -path */target/*)",
+      "Bash(make up:*)",
+      "Bash(curl -s http://localhost:16686/api/services)",
+      "Bash(xargs ls:*)"
+    ]
+  }
+}

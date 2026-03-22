@@ -1,0 +1,170 @@
+# ─── Full-stack: PostgreSQL + Kafka (KRaft) + services + observability stack ──
+
+services:
+
+  # ── Jaeger (all-in-one) — distributed trace collector + UI ──────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC ingest
+    restart: always
+
+  # ── Prometheus — metrics scraper ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - "9090:9090"
+    restart: always
+
+  # ── Grafana — dashboards ──────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"   # host 3001 to avoid clash with ledger-service on 3000
+    depends_on:
+      - prometheus
+      - jaeger
+    restart: always
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-dbs.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Kafka (KRaft — no ZooKeeper) ────────────────────────────────────────────
+  kafka:
+    image: apache/kafka:3.7.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Internal listener for service-to-service traffic; external for host tools.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9094:9094"   # expose external listener to host for debugging
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # ── ledger-service ──────────────────────────────────────────────────────────
+  ledger-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/ledger_db
+      DATABASE_MAX_CONNECTIONS: "10"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "3000"
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: trades
+      RUST_LOG: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      METRICS_PORT: "9091"
+    ports:
+      - "3000:3000"
+      - "9091:9091"   # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    restart: on-failure
+
+  # ── pnl-consumer ────────────────────────────────────────────────────────────
+  pnl-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.pnl-consumer
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/pnl_db
+      DATABASE_MAX_CONNECTIONS: "10"
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: trades
+      KAFKA_GROUP_ID: pnl-consumer
+      KAFKA_OFFSET_RESET: earliest
+      RUST_LOG: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      METRICS_PORT: "9091"
+    ports:
+      - "9092:9091"   # Prometheus metrics (host 9092 to avoid clash)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    restart: on-failure
+
+  # ── pnl-grpc ─────────────────────────────────────────────────────────────────
+  pnl-grpc:
+    build:
+      context: .
+      dockerfile: Dockerfile.pnl-grpc
+    environment:
+      # Reads portfolio_state from the pnl-consumer database.
+      DATABASE_URL: postgres://postgres:password@postgres:5432/pnl_db
+      GRPC_ADDR: 0.0.0.0:50051
+      RUST_LOG: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      METRICS_PORT: "9091"
+    ports:
+      - "50051:50051"
+      - "9093:9091"   # Prometheus metrics (host 9093 to avoid clash)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pnl-consumer:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    restart: on-failure
+
+volumes:
+  postgres_data:
+  kafka_data:
+  prometheus_data:
+  grafana_data:
